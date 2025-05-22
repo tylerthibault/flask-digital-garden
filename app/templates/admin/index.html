@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Digital Garden{% endblock %}
+
+{% block nav_items %}
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin.scan_vault') }}">Scan Vault</a>
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <h1 class="mb-4">Admin Dashboard</h1>
+    
+    <div class="mb-4">
+        <a href="{{ url_for('admin.scan_vault') }}" class="btn btn-primary">
+            Scan Vault for New Files
+        </a>
+    </div>
+    
+    <h2>All Pages</h2>
+    
+    {% if pages %}
+        <div class="table-responsive">
+            <!-- Modify the table in admin/index.html to include file type -->
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th>File Path</th>
+            <th>Status</th>
+            <th>Last Modified</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for page in pages %}
+            <tr>
+                <td>{{ page.title }}</td>
+                <td>
+                    {% if page.file_type == 'canvas' %}
+                        <span class="badge bg-info">Canvas</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Markdown</span>
+                    {% endif %}
+                </td>
+                <td><small>{{ page.file_path }}</small></td>
+                <td>
+                    {% if page.is_published %}
+                        <span class="badge bg-success">Published</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Draft</span>
+                    {% endif %}
+                </td>
+                <td>{{ page.last_modified.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin.toggle_publish', page_id=page.id) }}" class="d-inline">
+                        {% if page.is_published %}
+                            <button type="submit" class="btn btn-sm btn-warning">Unpublish</button>
+                        {% else %}
+                            <button type="submit" class="btn btn-sm btn-success">Publish</button>
+                        {% endif %}
+                    </form>
+                    
+                    {% if page.is_published %}
+                        <a href="{{ url_for('main.view_page', page_id=page.id) }}" class="btn btn-sm btn-primary">View</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            No pages found. Try scanning your vault for new files.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+

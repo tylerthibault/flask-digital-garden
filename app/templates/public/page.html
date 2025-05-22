@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} - Digital Garden{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-content {
+        line-height: 1.6;
+    }
+    .page-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    .page-content h1, 
+    .page-content h2, 
+    .page-content h3, 
+    .page-content h4, 
+    .page-content h5, 
+    .page-content h6 {
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+    }
+    .page-content blockquote {
+        border-left: 4px solid #ddd;
+        padding-left: 1em;
+        color: #666;
+    }
+    .page-content pre {
+        background-color: #f5f5f5;
+        padding: 1em;
+        border-radius: 5px;
+        overflow-x: auto;
+    }
+    .page-info {
+        color: #666;
+        font-size: 0.9em;
+        margin-bottom: 2em;
+    }
+    .back-link {
+        margin-bottom: 1em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="content">
+    <div class="back-link">
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">
+            &larr; Back to Home
+        </a>
+    </div>
+    
+    <h1>{{ page.title }}</h1>
+    
+    <div class="page-info">
+        Published: {{ page.published_at.strftime('%Y-%m-%d') }}
+    </div>
+    
+    <div class="page-content">
+        {{ content|safe }}
+    </div>
+</div>
+{% endblock %}

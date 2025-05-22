@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Digital Garden - Home{% endblock %}
+
+{% block content %}
+<div class="content">
+    <h1 class="mb-4">Company Knowledge Base</h1>
+    
+    {% if pages %}
+        <div class="row">
+            {% for page in pages %}
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100 page-card">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ page.title }}</h5>
+                            <p class="card-text text-muted">
+                                Published: {{ page.published_at.strftime('%Y-%m-%d') }}
+                            </p>
+                            <a href="{{ url_for('main.view_page', page_id=page.id) }}" class="btn btn-primary">Read More</a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            No published pages yet. Check back soon!
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
