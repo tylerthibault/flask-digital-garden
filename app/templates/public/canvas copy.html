@@ -1,0 +1,1208 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} - Digital Garden{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Basic container styling with dot grid */
+    .canvas-container {
+        position: relative;
+        width: 100%;
+        height: 80vh;
+        border: 1px solid #ccc;
+        background-color: #f8f9fa;
+        background-image: radial-gradient(#ddd 1px, transparent 1px);
+        background-size: 20px 20px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        cursor: grab;
+    }
+
+    /* Node styling */
+    .canvas-node {
+        position: absolute;
+        background-color: white;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        border-radius: 4px;
+        padding: 10px;
+        min-width: 150px;
+        max-width: 300px;
+        cursor: move;
+        /* Center transformation point for easier scaling */
+        transform-origin: center center;
+        z-index: 2;
+        /* Fix text bleeding by enforcing text wrapping and overflow constraints */
+        overflow: auto;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        word-break: break-word;
+        box-sizing: border-box;
+    }
+
+    /* Node types */
+    .canvas-node.text {
+        border-left: 4px solid #6c757d;
+    }
+
+    .canvas-node.file {
+        border-left: 4px solid #0d6efd;
+        background-color: #f0f7ff;
+    }
+
+    .canvas-node.link {
+        border-left: 4px solid #198754;
+        background-color: #f0fff7;
+    }
+
+    /* Placeholder styling for zoomed-out nodes */
+    .node-placeholder {
+        display: none;
+        /* Hidden by default, shown when zoomed out */
+    }
+
+    .node-placeholder-line {
+        height: 5px;
+        background-color: #dee2e6;
+        margin-bottom: 5px;
+        border-radius: 2px;
+    }
+
+    /* Arrow styling */
+    .edge-arrow {
+        position: absolute;
+        width: 0;
+        height: 0;
+        border-left: 8px solid #6c757d;
+        /* Default color */
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        z-index: 1;
+        pointer-events: none;
+        /* Allow clicking through the arrow */
+    }
+
+    /* Edge styling */
+    .canvas-edge {
+        position: absolute;
+        height: 2px;
+        background-color: #6c757d;
+        transform-origin: 0 0;
+        z-index: 1;
+        /* Default values for arrow color and size */
+        --arrow-color: #6c757d;
+        --arrow-size: 6px;
+        --arrow-width: 4px;
+    }
+
+    /* Edge arrow styling */
+    .canvas-edge::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 0;
+        height: 0;
+        border-left: var(--arrow-size) solid var(--arrow-color);
+        border-top: var(--arrow-width) solid transparent;
+        border-bottom: var(--arrow-width) solid transparent;
+        margin-right: calc(-1 * var(--arrow-size));
+    }
+
+    /* Node content */
+    .node-title {
+        font-weight: bold;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+    }
+
+    /* Node content */
+    .node-content {
+        font-size: 0.9em;
+        line-height: 1.4;
+        /* Ensure proper text wrapping */
+        white-space: normal;
+        /* Allow text to wrap */
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+
+        /* Remove any margin on the last child to prevent overflow */
+        &>*:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    /* When height is not specified, we'll add this class to allow scrolling */
+    .node-content.scrollable {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    /* Enhanced styling for markdown content inside nodes */
+    .node-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
+    }
+
+    .node-content h1,
+    .node-content h2,
+    .node-content h3 {
+        font-size: 1.1em;
+        margin-top: 0.5em;
+        margin-bottom: 0.3em;
+    }
+
+    .node-content h4,
+    .node-content h5,
+    .node-content h6 {
+        font-size: 1em;
+        margin-top: 0.5em;
+        margin-bottom: 0.3em;
+    }
+
+    .node-content p {
+        margin-bottom: 0.7em;
+    }
+
+    .node-content ul,
+    .node-content ol {
+        padding-left: 1.5em;
+        margin-bottom: 0.7em;
+    }
+
+    .node-content code {
+        background-color: #f5f5f5;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-size: 0.9em;
+        color: #e83e8c;
+    }
+
+    .node-content pre {
+        background-color: #f5f5f5;
+        padding: 8px;
+        border-radius: 4px;
+        overflow-x: auto;
+        margin-bottom: 0.7em;
+    }
+
+    .node-content blockquote {
+        border-left: 3px solid #dee2e6;
+        padding-left: 10px;
+        color: #6c757d;
+        margin-left: 5px;
+        margin-right: 0;
+    }
+
+    .node-content a {
+        color: #0d6efd;
+        text-decoration: none;
+    }
+
+    .node-content a:hover {
+        text-decoration: underline;
+    }
+
+    .node-content table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-bottom: 0.7em;
+    }
+
+    .node-content table th,
+    .node-content table td {
+        border: 1px solid #dee2e6;
+        padding: 4px 8px;
+    }
+
+    .node-content table th {
+        background-color: #f8f9fa;
+    }
+
+    /* Controls panel */
+    .canvas-controls {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: white;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        z-index: 10;
+    }
+
+    /* Legend panel */
+    .canvas-legend {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: white;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        z-index: 10;
+        font-size: 0.9em;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+    }
+
+    .legend-color {
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        border-radius: 2px;
+    }
+
+    /* Status message */
+    .canvas-status {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        padding: 8px 12px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        border-radius: 4px;
+        font-size: 0.9em;
+        z-index: 10;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .canvas-status.visible {
+        opacity: 1;
+    }
+
+    /* Debug panel */
+    .debug-panel {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 10px;
+        margin-bottom: 15px;
+        border-radius: 4px;
+    }
+
+    /* Color highlighting styles */
+    span[data-highlight-color="yellow"] {
+        background-color: #fff59d;
+    }
+
+    span[data-highlight-color="red"] {
+        background-color: #ffcdd2;
+    }
+
+    span[data-highlight-color="green"] {
+        background-color: #c8e6c9;
+    }
+
+    span[data-highlight-color="blue"] {
+        background-color: #bbdefb;
+    }
+
+    span[data-highlight-color="purple"] {
+        background-color: #e1bee7;
+    }
+
+    span[data-highlight-color="orange"] {
+        background-color: #ffe0b2;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Content block remains unchanged -->
+<div class="container">
+    <div class="back-link mb-3">
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">
+            &larr; Back to Home
+        </a>
+    </div>
+
+    <h1>{{ page.title }}</h1>
+
+    <div class="page-info mb-3">
+        Published: {{ page.published_at.strftime('%Y-%m-%d') }}
+    </div>
+
+    {% if canvas.error %}
+    <div class="alert alert-danger">
+        Error: {{ canvas.error }}
+    </div>
+    {% else %}
+    <!-- Debug panel (hidden by default) -->
+    <div id="debugPanel" class="debug-panel d-none" style="display: none;">
+        <h5>Debug Information</h5>
+        <div id="debugContent" class="d-none"></div>
+    </div>
+
+    <div id="canvasContainer" class="canvas-container">
+        <!-- Canvas content will be rendered here by JavaScript -->
+    </div>
+
+    <div class="canvas-controls">
+        <button id="zoomInBtn" class="btn btn-sm btn-outline-primary mb-1">Zoom In</button>
+        <button id="zoomOutBtn" class="btn btn-sm btn-outline-primary mb-1">Zoom Out</button>
+        <button id="resetViewBtn" class="btn btn-sm btn-outline-secondary">Reset View</button>
+    </div>
+
+    <div class="canvas-legend">
+        <h6 class="mb-2">Legend</h6>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #f0f7ff;"></div>
+            <span>Note</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: white;"></div>
+            <span>Text</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #f0fff7;"></div>
+            <span>Link</span>
+        </div>
+    </div>
+
+    <div id="canvasStatus" class="canvas-status"></div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Make sure marked.js is included for markdown processing -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    /**
+     * Digital Garden Canvas Renderer
+     * 
+     * Current Date and Time (UTC): 2025-05-22 21:53:03
+     * Current User's Login: tylerthibault
+     * 
+     * You are a professional python Software developer that ALWAYS writes clean code, 
+     * commenting when things are a complex fix. You feel free to ask clarifying questions 
+     * whenever I ask you something vague and you don't understand. You are able to say that 
+     * you don't know the answer to a question if you don't know because you never want to 
+     * make up information.
+     * Your role:
+     * - {Software developer} expert in {python}
+     * - Focus on {python, flask, sqlalchemy}
+     * Code guidelines:
+     * - Use {python} conventions
+     * - Optimize for {clean code}
+     */
+    document.addEventListener('DOMContentLoaded', function () {
+        // ===============================================================
+        // Configuration and state
+        // ===============================================================
+
+        // Debug mode - set to true to show debug panel
+        const DEBUG = true; // Set to true for troubleshooting arrow rendering
+
+        // Configure marked.js for safe rendering
+        marked.setOptions({
+            gfm: true,                // Enable GitHub Flavored Markdown
+            breaks: true,             // Add <br> on single line breaks
+            smartLists: true,         // Use smarter list behavior
+            smartypants: true,        // Use smart typography (quotes, dashes)
+            xhtml: true,              // Use self-closing tags for XHTML compliance
+            headerIds: false,         // Don't add IDs to headers (prevents conflicts)
+            sanitize: false,          // Modern versions of marked use DOMPurify instead
+        });
+
+        // Simple sanitizer function for when marked.sanitize is not available
+        function sanitizeHTML(html) {
+            const tempDiv = document.createElement('div');
+            tempDiv.textContent = html;
+            return tempDiv.innerHTML;
+        }
+
+        // Safe markdown parser that handles errors and sanitizes output
+        function parseMarkdown(markdown) {
+            try {
+                if (!markdown) return '';
+
+                // Parse markdown to HTML using marked.js
+                const html = marked.parse(markdown);
+
+                // Return sanitized HTML (marked.js should handle this in newer versions)
+                return html;
+            } catch (error) {
+                console.error('Error parsing markdown:', error);
+
+                // Fall back to sanitized text on error
+                return sanitizeHTML(markdown);
+            }
+        }
+
+        // Get canvas container
+        const container = document.getElementById('canvasContainer');
+        const statusEl = document.getElementById('canvasStatus');
+        const debugPanel = document.getElementById('debugPanel');
+        const debugContent = document.getElementById('debugContent');
+
+        // Canvas state
+        const state = {
+            scale: 1.0,
+            minScale: 0.2,
+            maxScale: 3.0,
+            offsetX: 0,
+            offsetY: 0,
+            isDragging: false,
+            startX: 0,
+            startY: 0,
+            nodes: [],
+            edges: [],
+            // Threshold for when to switch to placeholder display
+            placeholderThreshold: 0.6
+        };
+
+        // ===============================================================
+        // Debug utilities
+        // ===============================================================
+
+        // Show debug message
+        function debug(message, isError = false) {
+            if (DEBUG) {
+                debugPanel.style.display = 'block';
+
+                const timestamp = new Date().toLocaleTimeString();
+                const msgEl = document.createElement('div');
+                msgEl.innerHTML = `<span style="color: ${isError ? 'red' : 'blue'}">[${timestamp}]</span> ${message}`;
+
+                debugContent.appendChild(msgEl);
+
+                // Auto-scroll to bottom
+                debugContent.scrollTop = debugContent.scrollHeight;
+
+                // Also log to console
+                if (isError) {
+                    console.error(message);
+                } else {
+                    console.log(message);
+                }
+            }
+        }
+
+        // Show status message
+        function showStatus(message, duration = 2000) {
+            statusEl.textContent = message;
+            statusEl.classList.add('visible');
+
+            clearTimeout(statusEl.timeout);
+            statusEl.timeout = setTimeout(() => {
+                statusEl.classList.remove('visible');
+            }, duration);
+        }
+
+        // ===============================================================
+        // Data loading
+        // ===============================================================
+
+        // Load canvas data from Flask template
+        function loadCanvasData() {
+            try {
+                // Parse raw JSON data from Flask
+                {% if canvas.nodes %}
+                const rawNodes = {{ canvas.nodes| tojson
+            }};
+        state.nodes = JSON.parse(JSON.stringify(rawNodes));
+        {% else %}
+        state.nodes = [];
+        {% endif %}
+
+        {% if canvas.edges %}
+        const rawEdges = {{ canvas.edges| tojson
+    }};
+    state.edges = JSON.parse(JSON.stringify(rawEdges));
+    {% else %}
+    state.edges = [];
+    {% endif %}
+
+    debug(`Loaded ${state.nodes.length} nodes and ${state.edges.length} edges`);
+
+    if (state.nodes.length === 0) {
+        debug("No nodes found in canvas data", true);
+        showStatus("Canvas is empty");
+    }
+
+    return true;
+            } catch (error) {
+        debug(`Error loading canvas data: ${error.message}`, true);
+        showStatus("Error loading canvas data");
+        return false;
+    }
+        }
+
+    // ===============================================================
+    // Canvas rendering functions
+    // ===============================================================
+
+    // Clear the canvas
+    function clearCanvas() {
+        container.innerHTML = '';
+    }
+
+    // Create placeholder content for a node
+    function createNodePlaceholder(node) {
+        // Create a simple placeholder with varying lines based on node type
+        const placeholder = document.createElement('div');
+        placeholder.className = 'node-placeholder';
+
+        // Create different placeholder patterns based on node type
+        const lineCount = node.type === 'text' ? 4 : 2;
+
+        for (let i = 0; i < lineCount; i++) {
+            const line = document.createElement('div');
+            line.className = 'node-placeholder-line';
+
+            // Vary the width of lines for a more organic feel
+            const width = Math.floor(70 + Math.random() * 30);
+            line.style.width = `${width}%`;
+
+            placeholder.appendChild(line);
+        }
+
+        return placeholder;
+    }
+
+    // Create and position a node
+    function createNode(node) {
+        try {
+            // Create node element
+            const nodeEl = document.createElement('div');
+            nodeEl.className = `canvas-node ${node.type || 'text'}`;
+            nodeEl.id = `node-${node.id}`;
+
+            // Apply position with canvas offset and scaling
+            const centerX = container.offsetWidth / 2;
+            const centerY = container.offsetHeight / 2;
+
+            // Position relative to center + user-defined offset
+            const posX = centerX + (node.position.x + state.offsetX) * state.scale;
+            const posY = centerY + (node.position.y + state.offsetY) * state.scale;
+
+            // Set original position (without transform) - this helps with proper positioning
+            nodeEl.style.left = `${posX}px`;
+            nodeEl.style.top = `${posY}px`;
+
+            // Apply scaling transformation to node
+            nodeEl.style.transform = `translate(-50%, -50%) scale(${state.scale})`;
+
+            // Apply dimensions if specified
+            if (node.width) {
+                nodeEl.style.width = `${node.width}px`;
+            }
+
+            // Apply height if specified
+            if (node.height) {
+                nodeEl.style.height = `${node.height}px`;
+            }
+
+            // Create regular content container
+            const contentContainer = document.createElement('div');
+            contentContainer.className = 'node-content-container';
+
+            // Create node content based on type
+            if (node.type === 'text') {
+                // Create content element with proper sizing
+                const contentElement = document.createElement('div');
+
+                // If height is specified, don't add scrollable class
+                contentElement.className = node.height ? 'node-content' : 'node-content scrollable';
+
+                // Use marked.js to convert markdown to HTML
+                contentElement.innerHTML = parseMarkdown(node.content || '');
+
+                contentContainer.appendChild(contentElement);
+            } else if (node.type === 'file') {
+                contentContainer.innerHTML = `
+                        <div class="node-title">${node.label || 'File'}</div>
+                        ${node.url ? `<a href="${node.url}" class="btn btn-sm btn-primary">View</a>` :
+                        `<span class="badge bg-secondary">Not published</span>`}
+                    `;
+            } else if (node.type === 'link') {
+                contentContainer.innerHTML = `
+                        <div class="node-title">Link</div>
+                        <a href="${node.url}" target="_blank">${node.label || node.url}</a>
+                    `;
+            }
+
+            // Create placeholder for zoomed-out view
+            const placeholder = createNodePlaceholder(node);
+
+            // Add both content and placeholder to node
+            nodeEl.appendChild(contentContainer);
+            nodeEl.appendChild(placeholder);
+
+            // Update visibility based on zoom level
+            updateNodeDisplay(nodeEl);
+
+            // Add drag behavior
+            addNodeDragHandlers(nodeEl, node.id);
+
+            // Add to canvas
+            container.appendChild(nodeEl);
+
+            return nodeEl;
+        } catch (error) {
+            debug(`Error creating node ${node.id}: ${error.message}`, true);
+            return null;
+        }
+    }
+
+    // Update node display based on zoom level
+    function updateNodeDisplay(nodeEl) {
+        const showPlaceholder = state.scale < state.placeholderThreshold;
+
+        // Get the content and placeholder elements
+        const contentContainer = nodeEl.querySelector('.node-content-container');
+        const placeholder = nodeEl.querySelector('.node-placeholder');
+
+        if (!contentContainer || !placeholder) return;
+
+        // Toggle visibility based on zoom level
+        contentContainer.style.display = showPlaceholder ? 'none' : 'block';
+        placeholder.style.display = showPlaceholder ? 'block' : 'none';
+    }
+
+    // Update all nodes display based on current zoom
+    function updateAllNodesDisplay() {
+        document.querySelectorAll('.canvas-node').forEach(nodeEl => {
+            updateNodeDisplay(nodeEl);
+        });
+    }
+
+    // Create an edge between nodes with an arrow
+    // Create an edge between nodes with an arrow at the node boundaries
+    function createEdge(edge, fromNodeEl, toNodeEl) {
+        try {
+            if (!fromNodeEl || !toNodeEl) {
+                debug(`Cannot create edge ${edge.id}: Missing nodes`, true);
+                return null;
+            }
+
+            // Get node positions and dimensions
+            const fromRect = fromNodeEl.getBoundingClientRect();
+            const toRect = toNodeEl.getBoundingClientRect();
+
+            // Get center points relative to container
+            const containerRect = container.getBoundingClientRect();
+
+            const fromCenterX = fromRect.left + fromRect.width / 2 - containerRect.left;
+            const fromCenterY = fromRect.top + fromRect.height / 2 - containerRect.top;
+            const toCenterX = toRect.left + toRect.width / 2 - containerRect.left;
+            const toCenterY = toRect.top + toRect.height / 2 - containerRect.top;
+
+            // Calculate angle and direction vector
+            const dx = toCenterX - fromCenterX;
+            const dy = toCenterY - fromCenterY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+            // Normalize direction vector
+            const dirX = dx / distance;
+            const dirY = dy / distance;
+
+            // Calculate node half-dimensions
+            const fromHalfWidth = fromRect.width / 2;
+            const fromHalfHeight = fromRect.height / 2;
+            const toHalfWidth = toRect.width / 2;
+            const toHalfHeight = toRect.height / 2;
+
+            // Calculate intersection points with node boundaries
+            // This is a simplified approach that approximates the intersection
+            // by using the aspect ratio of the node to adjust the intersection point
+
+            // For starting node (fromNode)
+            let fromBoundaryX, fromBoundaryY;
+            const fromAspectRatio = fromHalfWidth / fromHalfHeight;
+
+            if (Math.abs(dirX) * fromAspectRatio > Math.abs(dirY)) {
+                // Intersect with vertical edge
+                fromBoundaryX = fromCenterX + (dirX > 0 ? fromHalfWidth : -fromHalfWidth);
+                fromBoundaryY = fromCenterY + dirY * (Math.abs(fromHalfWidth / dirX));
+            } else {
+                // Intersect with horizontal edge
+                fromBoundaryY = fromCenterY + (dirY > 0 ? fromHalfHeight : -fromHalfHeight);
+                fromBoundaryX = fromCenterX + dirX * (Math.abs(fromHalfHeight / dirY));
+            }
+
+            // For ending node (toNode)
+            let toBoundaryX, toBoundaryY;
+            const toAspectRatio = toHalfWidth / toHalfHeight;
+
+            if (Math.abs(dirX) * toAspectRatio > Math.abs(dirY)) {
+                // Intersect with vertical edge
+                toBoundaryX = toCenterX - (dirX > 0 ? toHalfWidth : -toHalfWidth);
+                toBoundaryY = toCenterY - dirY * (Math.abs(toHalfWidth / dirX));
+            } else {
+                // Intersect with horizontal edge
+                toBoundaryY = toCenterY - (dirY > 0 ? toHalfHeight : -toHalfHeight);
+                toBoundaryX = toCenterX - dirX * (Math.abs(toHalfHeight / dirY));
+            }
+
+            // Calculate new edge length and position
+            const newDx = toBoundaryX - fromBoundaryX;
+            const newDy = toBoundaryY - fromBoundaryY;
+            const newLength = Math.sqrt(newDx * newDx + newDy * newDy);
+            const newAngle = Math.atan2(newDy, newDx) * 180 / Math.PI;
+
+            // Create edge element
+            const edgeEl = document.createElement('div');
+            edgeEl.className = 'canvas-edge';
+            edgeEl.id = `edge-${edge.id}`;
+
+            // Set edge position and size to start from boundary points
+            edgeEl.style.left = `${fromBoundaryX}px`;
+            edgeEl.style.top = `${fromBoundaryY}px`;
+            edgeEl.style.width = `${newLength}px`;
+            edgeEl.style.transform = `rotate(${newAngle}deg)`;
+
+            // Scale edge thickness based on zoom
+            edgeEl.style.height = `${Math.max(1, 2 * state.scale)}px`;
+
+            // Set color if specified
+            const edgeColor = edge.color || '#6c757d';
+            edgeEl.style.backgroundColor = edgeColor;
+
+            // Add edge to canvas
+            container.prepend(edgeEl);
+
+            // Create SVG arrow at the end boundary point
+            const arrowSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            arrowSvg.setAttribute("width", "16");
+            arrowSvg.setAttribute("height", "16");
+            arrowSvg.setAttribute("viewBox", "0 0 16 16");
+            arrowSvg.setAttribute("id", `arrow-${edge.id}`);
+            arrowSvg.style.position = "absolute";
+            arrowSvg.style.pointerEvents = "none";
+            arrowSvg.style.zIndex = "3";
+
+            // Create arrow polygon - size scaled with zoom
+            const arrowSize = Math.max(1, state.scale);
+            const arrowPolygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+            arrowPolygon.setAttribute("points", `0,0 ${10 * arrowSize},${5 * arrowSize} 0,${10 * arrowSize}`);
+            arrowPolygon.setAttribute("fill", edgeColor);
+            arrowSvg.appendChild(arrowPolygon);
+
+            // Position and rotate arrow at the endpoint (to node boundary)
+            arrowSvg.style.left = `${toBoundaryX}px`;
+            arrowSvg.style.top = `${toBoundaryY}px`;
+            arrowSvg.style.transform = `translate(-50%, -50%) rotate(${newAngle}deg)`;
+
+            // Add arrow to canvas
+            container.appendChild(arrowSvg);
+
+            // Log for debugging
+            debug(`Created edge ${edge.id} from node ${edge.fromNode} to node ${edge.toNode}`);
+            debug(`Original points: (${fromCenterX}, ${fromCenterY}) to (${toCenterX}, ${toCenterY})`);
+            debug(`Boundary points: (${fromBoundaryX}, ${fromBoundaryY}) to (${toBoundaryX}, ${toBoundaryY})`);
+
+            return edgeEl;
+        } catch (error) {
+            debug(`Error creating edge ${edge.id}: ${error.message}`, true);
+            return null;
+        }
+    }
+
+    // Render all nodes and edges
+    function renderCanvas() {
+        try {
+            debug("Rendering canvas...");
+            clearCanvas();
+
+            // Update dot grid size based on scale
+            container.style.backgroundSize = `${20 * state.scale}px ${20 * state.scale}px`;
+
+            // First create all nodes
+            const nodeElements = {};
+            state.nodes.forEach(node => {
+                const nodeEl = createNode(node);
+                if (nodeEl) {
+                    nodeElements[node.id] = nodeEl;
+                }
+            });
+
+            // Then create edges between nodes
+            state.edges.forEach(edge => {
+                const fromNodeEl = nodeElements[edge.fromNode];
+                const toNodeEl = nodeElements[edge.toNode];
+                createEdge(edge, fromNodeEl, toNodeEl);
+            });
+
+            debug(`Rendered ${Object.keys(nodeElements).length} nodes and ${state.edges.length} edges`);
+
+            return true;
+        } catch (error) {
+            debug(`Error rendering canvas: ${error.message}`, true);
+            showStatus("Error rendering canvas");
+            return false;
+        }
+    }
+
+    // ===============================================================
+    // Interaction handlers
+    // ===============================================================
+
+    // Add drag behavior to a node
+    function addNodeDragHandlers(nodeEl, nodeId) {
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+
+        nodeEl.addEventListener('mousedown', function (e) {
+            // Only handle left button
+            if (e.button !== 0) return;
+
+            // Don't initiate drag if clicking on a link or button inside the node
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = parseInt(nodeEl.style.left) || 0;
+            startTop = parseInt(nodeEl.style.top) || 0;
+
+            nodeEl.style.zIndex = 1000; // Bring to front while dragging
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!isDragging) return;
+
+            const newLeft = startLeft + (e.clientX - startX);
+            const newTop = startTop + (e.clientY - startY);
+
+            nodeEl.style.left = `${newLeft}px`;
+            nodeEl.style.top = `${newTop}px`;
+
+            // Update edges connected to this node
+            updateEdgesForNode(nodeId);
+        });
+
+        document.addEventListener('mouseup', function () {
+            if (!isDragging) return;
+
+            isDragging = false;
+            nodeEl.style.zIndex = ''; // Reset z-index
+
+            // Update the node's position in the data model
+            const node = state.nodes.find(n => n.id === nodeId);
+            if (node) {
+                // Calculate the position relative to canvas center and scale
+                const centerX = container.offsetWidth / 2;
+                const centerY = container.offsetHeight / 2;
+                const left = parseInt(nodeEl.style.left) || 0;
+                const top = parseInt(nodeEl.style.top) || 0;
+
+                // Update the model position (accounting for offset and scale)
+                node.position.x = (left - centerX) / state.scale - state.offsetX;
+                node.position.y = (top - centerY) / state.scale - state.offsetY;
+            }
+        });
+
+        // Touch handlers remain unchanged
+        nodeEl.addEventListener('touchstart', function (e) {
+            // Don't initiate drag if touching a link or button inside the node
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+
+            if (e.touches.length === 1) {
+                isDragging = true;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                startLeft = parseInt(nodeEl.style.left) || 0;
+                startTop = parseInt(nodeEl.style.top) || 0;
+
+                nodeEl.style.zIndex = 1000; // Bring to front while dragging
+                e.preventDefault(); // Prevent scrolling while dragging
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', function (e) {
+            if (!isDragging || e.touches.length !== 1) return;
+
+            const newLeft = startLeft + (e.touches[0].clientX - startX);
+            const newTop = startTop + (e.touches[0].clientY - startY);
+
+            nodeEl.style.left = `${newLeft}px`;
+            nodeEl.style.top = `${newTop}px`;
+
+            // Update edges connected to this node
+            updateEdgesForNode(nodeId);
+
+            e.preventDefault(); // Prevent scrolling while dragging
+        }, { passive: false });
+
+        document.addEventListener('touchend', function () {
+            if (!isDragging) return;
+
+            isDragging = false;
+            nodeEl.style.zIndex = ''; // Reset z-index
+
+            // Update the node's position in the data model (same as in mouseup)
+            const node = state.nodes.find(n => n.id === nodeId);
+            if (node) {
+                const centerX = container.offsetWidth / 2;
+                const centerY = container.offsetHeight / 2;
+                const left = parseInt(nodeEl.style.left) || 0;
+                const top = parseInt(nodeEl.style.top) || 0;
+
+                node.position.x = (left - centerX) / state.scale - state.offsetX;
+                node.position.y = (top - centerY) / state.scale - state.offsetY;
+            }
+        });
+    }
+
+    // Add canvas pan behavior
+    function addCanvasPanHandlers() {
+        container.addEventListener('mousedown', function (e) {
+            // Only start panning if not clicking on a node
+            if (e.target === container) {
+                state.isDragging = true;
+                state.startX = e.clientX;
+                state.startY = e.clientY;
+                container.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!state.isDragging) return;
+
+            const dx = (e.clientX - state.startX) / state.scale;
+            const dy = (e.clientY - state.startY) / state.scale;
+
+            state.offsetX += dx;
+            state.offsetY += dy;
+
+            state.startX = e.clientX;
+            state.startY = e.clientY;
+
+            renderCanvas();
+        });
+
+        document.addEventListener('mouseup', function () {
+            if (state.isDragging) {
+                state.isDragging = false;
+                container.style.cursor = 'grab';
+            }
+        });
+
+        // Touch event handlers for mobile support
+        container.addEventListener('touchstart', function (e) {
+            if (e.touches.length === 1 && e.target === container) {
+                state.isDragging = true;
+                state.startX = e.touches[0].clientX;
+                state.startY = e.touches[0].clientY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', function (e) {
+            if (!state.isDragging || e.touches.length !== 1) return;
+
+            const dx = (e.touches[0].clientX - state.startX) / state.scale;
+            const dy = (e.touches[0].clientY - state.startY) / state.scale;
+
+            state.offsetX += dx;
+            state.offsetY += dy;
+
+            state.startX = e.touches[0].clientX;
+            state.startY = e.touches[0].clientY;
+
+            renderCanvas();
+            e.preventDefault();
+        }, { passive: false });
+
+        document.addEventListener('touchend', function () {
+            state.isDragging = false;
+        });
+    }
+
+    // Update edges connected to a specific node
+    function updateEdgesForNode(nodeId) {
+        // Get all edges connected to this node
+        const connectedEdges = state.edges.filter(edge =>
+            edge.fromNode === nodeId || edge.toNode === nodeId
+        );
+
+        // For each edge, remove the old one and create a new one
+        connectedEdges.forEach(edge => {
+            const oldEdge = document.getElementById(`edge-${edge.id}`);
+            const oldArrow = document.getElementById(`arrow-${edge.id}`);
+
+            if (oldEdge) {
+                oldEdge.remove();
+            }
+
+            if (oldArrow) {
+                oldArrow.remove();
+            }
+
+            const fromNodeEl = document.getElementById(`node-${edge.fromNode}`);
+            const toNodeEl = document.getElementById(`node-${edge.toNode}`);
+
+            createEdge(edge, fromNodeEl, toNodeEl);
+        });
+    }
+
+    // ===============================================================
+    // Zoom controls
+    // ===============================================================
+
+    // Initialize zoom controls
+    function initZoomControls() {
+        // Zoom in button
+        document.getElementById('zoomInBtn').addEventListener('click', function () {
+            if (state.scale < state.maxScale) {
+                state.scale = Math.min(state.maxScale, state.scale * 1.2);
+                renderCanvas();
+                showStatus(`Zoom: ${Math.round(state.scale * 100)}%`);
+            }
+        });
+
+        // Zoom out button
+        document.getElementById('zoomOutBtn').addEventListener('click', function () {
+            if (state.scale > state.minScale) {
+                state.scale = Math.max(state.minScale, state.scale / 1.2);
+                renderCanvas();
+                showStatus(`Zoom: ${Math.round(state.scale * 100)}%`);
+            }
+        });
+
+        // Reset view button
+        document.getElementById('resetViewBtn').addEventListener('click', function () {
+            state.scale = 1.0;
+            state.offsetX = 0;
+            state.offsetY = 0;
+            renderCanvas();
+            showStatus('View reset');
+        });
+
+        // Mouse wheel zoom - MODIFIED to only zoom when Ctrl key is pressed
+        container.addEventListener('wheel', function (e) {
+            // Only zoom when Ctrl key is pressed
+            if (e.ctrlKey) {
+                e.preventDefault();
+
+                // Determine zoom direction and factor
+                const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+
+                // Calculate new scale with limits
+                const newScale = Math.max(
+                    state.minScale,
+                    Math.min(state.maxScale, state.scale * zoomFactor)
+                );
+
+                if (newScale !== state.scale) {
+                    // Get mouse position relative to container
+                    const rect = container.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+
+                    // Get mouse position relative to canvas center
+                    const centerX = container.offsetWidth / 2;
+                    const centerY = container.offsetHeight / 2;
+
+                    // Calculate relative position to center (adjusted for current scale)
+                    const relX = (mouseX - centerX) / state.scale;
+                    const relY = (mouseY - centerY) / state.scale;
+
+                    // Calculate zoom adjustment to keep point under mouse
+                    const scaleFactor = newScale / state.scale;
+
+                    // Update state
+                    state.offsetX -= relX * (scaleFactor - 1);
+                    state.offsetY -= relY * (scaleFactor - 1);
+                    state.scale = newScale;
+
+                    // Update canvas
+                    renderCanvas();
+                    showStatus(`Zoom: ${Math.round(state.scale * 100)}%`);
+                }
+            }
+            // If Ctrl is not pressed, allow default scrolling behavior
+        }, { passive: false });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (e) {
+            // Only handle if not in an input field
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            if (e.key === '+' || e.key === '=') {
+                // Zoom in
+                document.getElementById('zoomInBtn').click();
+                e.preventDefault();
+            } else if (e.key === '-' || e.key === '_') {
+                // Zoom out
+                document.getElementById('zoomOutBtn').click();
+                e.preventDefault();
+            } else if (e.key === '0') {
+                // Reset view
+                document.getElementById('resetViewBtn').click();
+                e.preventDefault();
+            }
+        });
+    }
+
+    // ===============================================================
+    // Initialization
+    // ===============================================================
+
+    // Initialize the canvas
+    function initCanvas() {
+        debug("Initializing canvas...");
+
+        // Load data
+        if (!loadCanvasData()) {
+            // If loading fails, show an error message in the canvas
+            container.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: #721c24;">
+                        <h3>Error Loading Canvas</h3>
+                        <p>Could not load canvas data. Please check the browser console for details.</p>
+                    </div>
+                `;
+            return;
+        }
+
+        // Add event handlers
+        addCanvasPanHandlers();
+        initZoomControls();
+
+        // Render the canvas
+        renderCanvas();
+
+        // If no nodes were loaded, show a message
+        if (state.nodes.length === 0) {
+            container.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: #6c757d;">
+                        <h3>Empty Canvas</h3>
+                        <p>This canvas does not contain any content yet.</p>
+                    </div>
+                `;
+        }
+
+        // Show initial status
+        showStatus("Canvas loaded");
+
+        // Add window resize handler
+        window.addEventListener('resize', function () {
+            // Debounce resize events
+            clearTimeout(window.resizeTimer);
+            window.resizeTimer = setTimeout(function () {
+                debug("Window resized, re-rendering canvas");
+                renderCanvas();
+            }, 250);
+        });
+    }
+
+    // Start initialization
+    initCanvas();
+    });
+</script>
+{% endblock %}
